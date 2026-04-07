@@ -104,3 +104,56 @@ fn list_str_type_not_flagged() {
     let d = lint_with_rule(source, "no-str-empty-default");
     assert_eq!(d.len(), 0);
 }
+
+// -- Class field (model field) detection --
+
+#[test]
+fn class_field_str_empty() {
+    let source = "class C(BaseModel):\n    name: str = \"\"";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].line, 2);
+}
+
+#[test]
+fn class_field_str_non_empty_ok() {
+    let source = "class C(BaseModel):\n    name: str = \"hello\"";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn class_field_str_no_default_ok() {
+    let source = "class C(BaseModel):\n    name: str";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn class_field_int_default_ok() {
+    let source = "class C(BaseModel):\n    count: int = 0";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn class_field_multiple_one_bad() {
+    let source = "class C(BaseModel):\n    name: str = \"\"\n    title: str = \"ok\"\n    desc: str = ''";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 2);
+}
+
+#[test]
+fn class_field_optional_str_empty() {
+    let source = "class C(BaseModel):\n    name: str | None = \"\"";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn module_level_assignment_not_flagged() {
+    // str = "" at module level (not in a class) should NOT be flagged
+    let source = "name: str = \"\"";
+    let d = lint_with_rule(source, "no-str-empty-default");
+    assert_eq!(d.len(), 0);
+}
