@@ -69,18 +69,59 @@ fn none_default_value() {
     assert_eq!(d.len(), 0);
 }
 
-// -- Should NOT flag: untyped or non-param --
+// -- Should flag: locally annotated non-optional variables --
 
 #[test]
-fn untyped_param() {
-    let source = "def f(x):\n    if x is None:\n        pass";
+fn local_annotated_str() {
+    let source = "def f():\n    x: str = get_name()\n    if x is None:\n        pass";
+    let d = lint_with_rule(source, "no-redundant-none-check");
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].line, 3);
+}
+
+#[test]
+fn local_annotated_int() {
+    let source = "def f():\n    count: int = compute()\n    if count is None:\n        pass";
+    let d = lint_with_rule(source, "no-redundant-none-check");
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn local_annotated_is_not_none() {
+    let source = "def f():\n    x: str = get_name()\n    if x is not None:\n        pass";
+    let d = lint_with_rule(source, "no-redundant-none-check");
+    assert_eq!(d.len(), 1);
+}
+
+// -- Should NOT flag: locally annotated optional / untyped / .get() --
+
+#[test]
+fn local_annotated_optional() {
+    let source = "def f():\n    x: str | None = get_name()\n    if x is None:\n        pass";
     let d = lint_with_rule(source, "no-redundant-none-check");
     assert_eq!(d.len(), 0);
 }
 
 #[test]
-fn local_variable() {
+fn local_unannotated() {
     let source = "def f():\n    x = get_value()\n    if x is None:\n        pass";
+    let d = lint_with_rule(source, "no-redundant-none-check");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn local_get_call_ok() {
+    // .get() legitimately returns None -- the check is correct
+    let source = "def f(d: dict):\n    x = d.get(\"key\")\n    if x is None:\n        pass";
+    let d = lint_with_rule(source, "no-redundant-none-check");
+    assert_eq!(d.len(), 0);
+}
+
+// -- Should NOT flag: untyped param, not in function, Any type --
+
+#[test]
+fn untyped_param() {
+    let source = "def f(x):\n    if x is None:\n        pass";
     let d = lint_with_rule(source, "no-redundant-none-check");
     assert_eq!(d.len(), 0);
 }
@@ -92,11 +133,16 @@ fn not_in_function() {
     assert_eq!(d.len(), 0);
 }
 
-// -- Should NOT flag: Any type --
-
 #[test]
 fn any_type() {
     let source = "def f(x: Any):\n    if x is None:\n        pass";
+    let d = lint_with_rule(source, "no-redundant-none-check");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn local_annotated_any() {
+    let source = "def f():\n    x: Any = get_value()\n    if x is None:\n        pass";
     let d = lint_with_rule(source, "no-redundant-none-check");
     assert_eq!(d.len(), 0);
 }

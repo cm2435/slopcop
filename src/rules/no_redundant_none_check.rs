@@ -21,26 +21,26 @@ impl Rule for NoRedundantNoneCheck {
         ancestors: &[tree_sitter::Node],
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        // Match patterns: `X is None` or `X is not None`
         let Some(ident_name) = extract_none_comparison_ident(node, source) else {
             return;
         };
 
-        // Find the enclosing function_definition
         let Some(func_node) = ancestors.iter().rev().find(|a| a.kind() == "function_definition") else {
             return;
         };
 
-        // Look up the parameter's type annotation
-        let Some(params) = func_node.child_by_field_name("parameters") else {
-            return;
-        };
+        // Try params first, then local annotated variables
+        let type_text = func_node
+            .child_by_field_name("parameters")
+            .and_then(|params| find_param_type(&params, ident_name, source))
+            .or_else(|| {
+                func_node
+                    .child_by_field_name("body")
+                    .and_then(|body| find_local_annotated_type(&body, ident_name, node, source))
+            });
 
-        let Some(type_text) = find_param_type(&params, ident_name, source) else {
-            return; // param not found or untyped
-        };
+        let Some(type_text) = type_text else { return };
 
-        // If the type includes None/Optional/Any, the check might be valid
         if type_includes_none(type_text) || type_text == "Any" {
             return;
         }
@@ -131,6 +131,56 @@ fn find_param_type<'a>(
                 }
             }
             _ => {}
+        }
+    }
+    None
+}
+
+/// Find a type annotation for a locally-annotated variable in the function body.
+/// Scans `assignment` nodes like `x: str = value` that appear BEFORE the comparison node.
+fn find_local_annotated_type<'a>(
+    body: &tree_sitter::Node,
+    name: &str,
+    comparison_node: &tree_sitter::Node,
+    source: &'a [u8],
+) -> Option<&'a str> {
+    let comparison_row = comparison_node.start_position().row;
+
+    for i in 0..body.child_count() {
+        let Some(stmt) = body.child(i) else { continue };
+
+        // Only look at statements before the comparison
+        if stmt.start_position().row >= comparison_row {
+            break;
+        }
+
+        // Drill into expression_statement → assignment
+        let assignment = if stmt.kind() == "expression_statement" {
+            stmt.child(0)
+        } else {
+            None
+        };
+        let Some(assignment) = assignment else { continue };
+        if assignment.kind() != "assignment" { continue; }
+
+        // Look for: identifier, ":", type, "=", value
+        let mut found_name = None;
+        let mut found_type = None;
+        for j in 0..assignment.child_count() {
+            let Some(child) = assignment.child(j) else { continue };
+            match child.kind() {
+                "identifier" if found_name.is_none() => {
+                    found_name = child.utf8_text(source).ok();
+                }
+                "type" => {
+                    found_type = child.utf8_text(source).ok();
+                }
+                _ => {}
+            }
+        }
+
+        if found_name == Some(name) {
+            return found_type;
         }
     }
     None
