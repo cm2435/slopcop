@@ -44,6 +44,7 @@ All rules are **enabled by default**. Disable per-project via `pyproject.toml`.
 | `no-dataclass` | `@dataclass` usage and `dataclasses` imports — use Pydantic or project-standard models |
 | `no-bare-except` | `except:`, `except Exception:`, `except BaseException:` — catch specific types |
 | `no-print` | `print()` calls — use structured logging |
+| `no-todo-comment` | `TODO`, `FIXME`, `HACK`, `XXX` comments — resolve or track in an issue |
 
 ## Configuration
 
