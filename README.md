@@ -7,14 +7,16 @@ Built on [tree-sitter](https://tree-sitter.github.io/) for AST-correct analysis 
 ## Install
 
 ```bash
-# From source (requires Rust toolchain)
-cargo install --git https://github.com/cm2435/slopcop
-
-# Or clone and build
-git clone https://github.com/cm2435/slopcop && cd slopcop && cargo install --path .
+pip install slopcop
+# or
+uv tool install slopcop
 ```
 
-PyPI and crates.io packages coming soon (`pip install slopcop`).
+Or from source:
+
+```bash
+cargo install --git https://github.com/cm2435/slopcop
+```
 
 ## Usage
 
@@ -103,11 +105,8 @@ x = getattr(obj, name)                     # slopcop: ignore[no-hasattr-getattr,
 
 ```yaml
 # GitHub Actions
-- name: Install slopcop
-  run: cargo install --git https://github.com/cm2435/slopcop
-
-- name: Lint
-  run: slopcop src/ tests/
+- run: pip install slopcop
+- run: slopcop src/ tests/
 ```
 
 ## Development
