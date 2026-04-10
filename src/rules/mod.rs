@@ -76,11 +76,21 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
     all_rules_with_config(&Config::default())
 }
 
-/// Return a map from rule_id → help text for all rules.
-pub fn help_texts(config: &Config) -> std::collections::HashMap<&'static str, &'static str> {
-    all_rules_with_config(config)
+/// Return a map from rule_id → help text for all rules, with user overrides applied.
+pub fn help_texts(config: &Config) -> std::collections::HashMap<&'static str, String> {
+    let rules = all_rules_with_config(config);
+
+    let mut map: std::collections::HashMap<&'static str, String> = rules
         .iter()
         .filter(|r| !r.help().is_empty())
-        .map(|r| (r.name(), r.help()))
-        .collect()
+        .map(|r| (r.name(), r.help().to_string()))
+        .collect();
+
+    for (rule_id, text) in &config.help_overrides {
+        if let Some(key) = map.keys().copied().find(|k| *k == rule_id.as_str()) {
+            map.insert(key, text.clone());
+        }
+    }
+
+    map
 }

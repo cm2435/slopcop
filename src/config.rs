@@ -4,19 +4,14 @@ use std::path::Path;
 use anyhow::Result;
 use serde::Deserialize;
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone)]
 pub struct Config {
-    #[serde(default)]
     pub exclude: Vec<String>,
-
-    #[serde(default, rename = "per-file-ignores")]
     pub per_file_ignores: HashMap<String, Vec<String>>,
-
-    #[serde(default)]
     pub rules: RuleConfigs,
-
-    #[serde(skip)]
     pub min_python_version: Option<(u32, u32)>,
+    /// Per-rule help text overrides from `[tool.slopcop.rules.<id>].help`.
+    pub help_overrides: HashMap<String, String>,
 }
 
 impl Config {
@@ -33,15 +28,59 @@ impl Config {
     }
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone)]
 pub struct RuleConfigs {
-    #[serde(default, rename = "max-function-params")]
     pub max_function_params: Option<MaxFunctionParamsConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MaxFunctionParamsConfig {
     pub max: usize,
+}
+
+/// Raw serde-friendly mirror of Config for initial deserialization.
+/// The `rules` table is kept as raw TOML values so we can extract both
+/// known typed fields (e.g. `max-function-params.max`) and arbitrary
+/// `help` strings from any rule table.
+#[derive(Deserialize)]
+struct RawConfig {
+    #[serde(default)]
+    exclude: Vec<String>,
+
+    #[serde(default, rename = "per-file-ignores")]
+    per_file_ignores: HashMap<String, Vec<String>>,
+
+    #[serde(default)]
+    rules: HashMap<String, toml::Value>,
+}
+
+impl RawConfig {
+    fn into_config(self) -> Config {
+        let mut rule_configs = RuleConfigs::default();
+        let mut help_overrides = HashMap::new();
+
+        for (rule_id, value) in &self.rules {
+            if let Some(table) = value.as_table() {
+                if rule_id == "max-function-params" {
+                    if let Some(max_val) = table.get("max").and_then(|v| v.as_integer()) {
+                        rule_configs.max_function_params =
+                            Some(MaxFunctionParamsConfig { max: max_val as usize });
+                    }
+                }
+                if let Some(help) = table.get("help").and_then(|v| v.as_str()) {
+                    help_overrides.insert(rule_id.clone(), help.to_string());
+                }
+            }
+        }
+
+        Config {
+            exclude: self.exclude,
+            per_file_ignores: self.per_file_ignores,
+            rules: rule_configs,
+            min_python_version: None,
+            help_overrides,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -58,7 +97,7 @@ struct ProjectTable {
 
 #[derive(Deserialize)]
 struct ToolTable {
-    slopcop: Option<Config>,
+    slopcop: Option<RawConfig>,
 }
 
 /// Walk upward from `start_dir` looking for a pyproject.toml with [tool.slopcop].
@@ -91,9 +130,9 @@ fn try_load_config(path: &Path) -> Result<Config> {
     let mut config = pyproject
         .tool
         .and_then(|t| t.slopcop)
+        .map(|raw| raw.into_config())
         .unwrap_or_default();
 
-    // Extract min Python version from [project].requires-python
     if let Some(ref project) = pyproject.project {
         if let Some(ref spec) = project.requires_python {
             config.min_python_version = parse_min_python_version(spec);
@@ -232,5 +271,37 @@ mod tests {
         assert_eq!(parse_min_python_version("==3.12"), Some((3, 12)));
         assert_eq!(parse_min_python_version(">=3.10.1"), Some((3, 10)));
         assert_eq!(parse_min_python_version("~=3.8"), None); // ~= not supported
+    }
+
+    #[test]
+    fn test_help_override_parsing() {
+        let toml_str = r#"
+[tool.slopcop.rules.no-print]
+help = "Use structlog in this project."
+
+[tool.slopcop.rules.max-function-params]
+max = 10
+help = "Group into a Pydantic model."
+"#;
+        let pyproject: PyprojectToml = toml::from_str(toml_str).unwrap();
+        let config = pyproject.tool.unwrap().slopcop.unwrap().into_config();
+
+        assert_eq!(
+            config.help_overrides.get("no-print").map(|s| s.as_str()),
+            Some("Use structlog in this project.")
+        );
+        assert_eq!(
+            config.help_overrides.get("max-function-params").map(|s| s.as_str()),
+            Some("Group into a Pydantic model.")
+        );
+        assert_eq!(config.rules.max_function_params.as_ref().unwrap().max, 10);
+    }
+
+    #[test]
+    fn test_help_override_empty_rules() {
+        let toml_str = "[tool.slopcop]\n";
+        let pyproject: PyprojectToml = toml::from_str(toml_str).unwrap();
+        let config = pyproject.tool.unwrap().slopcop.unwrap().into_config();
+        assert!(config.help_overrides.is_empty());
     }
 }

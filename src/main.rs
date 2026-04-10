@@ -167,7 +167,7 @@ fn print_grouped_text(diagnostics: &[&Diagnostic], config: &config::Config) {
         );
 
         if let Some(help) = help_map.get(rule_id) {
-            for line in textwrap(help, 76) {
+            for line in textwrap(help.as_str(), 76) {
                 eprintln!("  {line}");
             }
             eprintln!();
@@ -209,7 +209,7 @@ fn print_grouped_json(diagnostics: &[&Diagnostic], config: &config::Config) {
                     Severity::Error => "error",
                     Severity::Warning => "warning",
                 },
-                "help": help_map.get(rule_id).unwrap_or(&""),
+                "help": help_map.get(rule_id).map(|s| s.as_str()).unwrap_or(""),
                 "count": diags.len(),
                 "violations": locations,
             })

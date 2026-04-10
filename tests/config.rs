@@ -156,6 +156,47 @@ fn display_format_includes_severity() {
     assert!(formatted.contains("warning[no-print]"), "got: {formatted}");
 }
 
+// -- Help overrides --
+
+#[test]
+fn help_override_replaces_builtin() {
+    let config = Config {
+        help_overrides: [("no-print".to_string(), "Use structlog.".to_string())]
+            .into_iter()
+            .collect(),
+        ..Config::default()
+    };
+    let map = slopcop::rules::help_texts(&config);
+    assert_eq!(map.get("no-print").map(|s| s.as_str()), Some("Use structlog."));
+}
+
+#[test]
+fn help_override_preserves_unoverridden() {
+    let config = Config {
+        help_overrides: [("no-print".to_string(), "custom".to_string())]
+            .into_iter()
+            .collect(),
+        ..Config::default()
+    };
+    let map = slopcop::rules::help_texts(&config);
+    let bare_help = map.get("no-bare-except").map(|s| s.as_str()).unwrap_or("");
+    assert!(bare_help.contains("KeyboardInterrupt"), "built-in help should be untouched");
+}
+
+#[test]
+fn help_override_coexists_with_max() {
+    let mut config = Config::default();
+    config.rules.max_function_params = Some(slopcop::config::MaxFunctionParamsConfig { max: 5 });
+    config.help_overrides.insert("max-function-params".to_string(), "Use a model.".to_string());
+
+    let source = "def f(a, b, c, d, e, f):\n    pass";
+    let d = lint_source_with_config(source, "<test>", &config);
+    assert_eq!(count_rule(&d, "max-function-params"), 1);
+
+    let map = slopcop::rules::help_texts(&config);
+    assert_eq!(map.get("max-function-params").map(|s| s.as_str()), Some("Use a model."));
+}
+
 #[test]
 fn display_format_error_severity() {
     let source = "try:\n    pass\nexcept:\n    pass";
