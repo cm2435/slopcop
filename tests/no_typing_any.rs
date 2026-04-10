@@ -78,6 +78,46 @@ fn builtin_any_call_ok() {
     assert_eq!(d.len(), 0);
 }
 
+// -- *args and **kwargs: Any is idiomatic and should not be flagged --
+
+#[test]
+fn star_args_any_not_flagged() {
+    let d = lint_with_rule("def f(*args: Any):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn double_star_kwargs_any_not_flagged() {
+    let d = lint_with_rule("def f(**kwargs: Any):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn star_args_and_kwargs_any_not_flagged() {
+    let d = lint_with_rule("def f(*args: Any, **kwargs: Any):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn mixed_params_only_regular_flagged() {
+    let d = lint_with_rule("def f(x: Any, *args: Any, **kwargs: Any):\n    pass", "no-typing-any");
+    // Only x: Any should be flagged, *args and **kwargs are exempt
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn star_args_complex_type_not_flagged() {
+    let d = lint_with_rule("def f(*args: Any, y: int):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn kwargs_with_return_any_flagged() {
+    let d = lint_with_rule("def f(**kwargs: Any) -> Any:\n    pass", "no-typing-any");
+    // **kwargs: Any is exempt, but -> Any is still flagged
+    assert_eq!(d.len(), 1);
+}
+
 // -- Combined import + usage --
 
 #[test]

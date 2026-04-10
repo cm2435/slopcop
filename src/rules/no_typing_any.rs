@@ -18,11 +18,34 @@ impl Rule for NoTypingAny {
         &self,
         node: &tree_sitter::Node,
         source: &[u8],
-        _ancestors: &[tree_sitter::Node],
+        ancestors: &[tree_sitter::Node],
         diagnostics: &mut Vec<Diagnostic>,
     ) {
+        if is_variadic_param_annotation(ancestors) {
+            return;
+        }
         find_any_identifiers(node, source, diagnostics);
     }
+}
+
+/// Returns true if this type node annotates a `*args` or `**kwargs` parameter,
+/// where `Any` is idiomatic and unavoidable in Python's type system.
+fn is_variadic_param_annotation(ancestors: &[tree_sitter::Node]) -> bool {
+    let parent = match ancestors.last() {
+        Some(p) => p,
+        None => return false,
+    };
+    if parent.kind() != "typed_parameter" {
+        return false;
+    }
+    for i in 0..parent.child_count() {
+        let child = parent.child(i).unwrap();
+        let kind = child.kind();
+        if kind == "list_splat_pattern" || kind == "dictionary_splat_pattern" {
+            return true;
+        }
+    }
+    false
 }
 
 /// Recursively find `identifier` nodes with text "Any" within a type annotation.
