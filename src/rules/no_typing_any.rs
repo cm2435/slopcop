@@ -1,6 +1,8 @@
 use crate::diagnostic::Diagnostic;
 use crate::rules::{Rule, Severity};
 
+const ESCAPE_HATCHES: &[&str] = &["Any", "object"];
+
 pub struct NoTypingAny;
 
 impl Rule for NoTypingAny {
@@ -11,10 +13,10 @@ impl Rule for NoTypingAny {
     fn severity(&self) -> Severity { Severity::Warning }
 
     fn help(&self) -> &'static str {
-        "`Any` disables type checking for everything it touches. Use a specific \
-         type, a `Protocol`, `TypeVar`, or `object` instead. For `*args` / \
-         `**kwargs` this rule is auto-skipped. If the type is truly unknowable \
-         (e.g. untyped third-party API), suppress with \
+        "`Any` and bare `object` disable meaningful type checking. Use a \
+         specific type, a `Protocol`, `TypeVar`, or a union instead. For \
+         `*args` / `**kwargs` this rule is auto-skipped. If the type is truly \
+         unknowable (e.g. untyped third-party API), suppress with \
          `# slopcop: ignore[no-typing-any]`."
     }
 
@@ -32,7 +34,7 @@ impl Rule for NoTypingAny {
         if is_variadic_param_annotation(ancestors) {
             return;
         }
-        find_any_identifiers(node, source, diagnostics);
+        find_escape_hatch_identifiers(node, source, diagnostics);
     }
 }
 
@@ -56,24 +58,34 @@ fn is_variadic_param_annotation(ancestors: &[tree_sitter::Node]) -> bool {
     false
 }
 
-/// Recursively find `identifier` nodes with text "Any" within a type annotation.
-/// Skips child `type` nodes since the engine dispatches those independently.
-fn find_any_identifiers(
+/// Recursively find `identifier` nodes with escape-hatch type names (`Any`, `object`)
+/// within a type annotation. Skips child `type` nodes since the engine dispatches
+/// those independently.
+fn find_escape_hatch_identifiers(
     node: &tree_sitter::Node,
     source: &[u8],
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if node.kind() == "identifier" && node.utf8_text(source).unwrap_or("") == "Any" {
-        diagnostics.push(Diagnostic {
-            path: String::new(),
-            line: node.start_position().row + 1,
-            col: node.start_position().column,
-            rule_id: "no-typing-any",
-            severity: crate::rules::Severity::Error,
-            message: "Avoid `Any` in type annotations; use specific types or protocols"
-                .to_string(),
-        });
-        return;
+    if node.kind() == "identifier" {
+        let text = node.utf8_text(source).unwrap_or("");
+        if ESCAPE_HATCHES.contains(&text) {
+            let message = if text == "Any" {
+                "Avoid `Any` in type annotations; use specific types or protocols".to_string()
+            } else {
+                format!(
+                    "Avoid bare `{text}` in type annotations; use a specific type, Protocol, or TypeVar"
+                )
+            };
+            diagnostics.push(Diagnostic {
+                path: String::new(),
+                line: node.start_position().row + 1,
+                col: node.start_position().column,
+                rule_id: "no-typing-any",
+                severity: crate::rules::Severity::Error,
+                message,
+            });
+            return;
+        }
     }
 
     for i in 0..node.child_count() {
@@ -81,6 +93,6 @@ fn find_any_identifiers(
         if child.kind() == "type" {
             continue;
         }
-        find_any_identifiers(&child, source, diagnostics);
+        find_escape_hatch_identifiers(&child, source, diagnostics);
     }
 }

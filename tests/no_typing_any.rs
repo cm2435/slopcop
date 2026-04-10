@@ -127,3 +127,79 @@ fn import_and_usage_only_usage_flagged() {
     // Only 2 usage sites (param + return), import is not flagged
     assert_eq!(d.len(), 2);
 }
+
+// -- Bare `object` in type annotations --
+
+#[test]
+fn param_typed_object() {
+    let d = lint_with_rule("def f(x: object):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 1);
+    assert!(d[0].message.contains("object"));
+}
+
+#[test]
+fn return_type_object() {
+    let d = lint_with_rule("def f() -> object:\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn variable_annotation_object() {
+    let d = lint_with_rule("x: object = 5", "no-typing-any");
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn union_object() {
+    let d = lint_with_rule("def f(x: int | object):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn generic_object() {
+    let d = lint_with_rule("def f(x: list[object]):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn star_args_object_not_flagged() {
+    let d = lint_with_rule("def f(*args: object):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn kwargs_object_not_flagged() {
+    let d = lint_with_rule("def f(**kwargs: object):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn class_inherits_object_ok() {
+    // class inheritance is not a type annotation — should NOT be flagged
+    let d = lint_with_rule("class Foo(object):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn variable_named_object_ok() {
+    let d = lint_with_rule("object = 42\nprint(object)", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn method_on_object_ok() {
+    let d = lint_with_rule("object.method()", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn object_in_string_ok() {
+    let d = lint_with_rule("x = \"object\"", "no-typing-any");
+    assert_eq!(d.len(), 0);
+}
+
+#[test]
+fn mixed_any_and_object() {
+    let d = lint_with_rule("def f(x: Any, y: object):\n    pass", "no-typing-any");
+    assert_eq!(d.len(), 2);
+}
