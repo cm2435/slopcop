@@ -30,6 +30,12 @@ slopcop path/to/file.py
 # Quiet mode (exit code only, for CI)
 slopcop --quiet src/
 
+# Skip specific rules from the CLI
+slopcop --ignore no-print,no-assert src/
+
+# Run only specific rules from the CLI
+slopcop --select no-print --select no-assert src/
+
 # JSON output
 slopcop --format json src/
 
@@ -38,6 +44,8 @@ slopcop --warn-only src/
 ```
 
 Exit codes: `0` = clean, `1` = violations found, `2` = fatal error.
+
+CLI rule filters these semantics: `--select` replaces the default enabled set of all rules, `--ignore` removes rules from the enabled set afterward, and both flags override `[tool.slopcop]` config from `pyproject.toml`. Both flags accept comma-separated values and may be repeated.
 
 ## Rules
 

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -19,6 +20,14 @@ struct Cli {
     /// Files or directories to lint (walks recursively for .py files)
     #[arg(required = true)]
     paths: Vec<PathBuf>,
+
+    /// Rule IDs to run. If provided, only these rules are enabled.
+    #[arg(long, value_delimiter = ',')]
+    select: Vec<String>,
+
+    /// Rule IDs to skip after selection/config has been resolved.
+    #[arg(long, value_delimiter = ',')]
+    ignore: Vec<String>,
 
     /// Suppress output; only set exit code
     #[arg(short, long)]
@@ -56,7 +65,7 @@ fn main() {
 }
 
 fn run(cli: &Cli) -> Result<bool> {
-    let config = config::discover_config(
+    let mut config = config::discover_config(
         &std::env::current_dir().unwrap_or_else(|_| {
             cli.paths
                 .first()
@@ -64,6 +73,8 @@ fn run(cli: &Cli) -> Result<bool> {
                 .unwrap_or_else(|| PathBuf::from("."))
         }),
     );
+
+    apply_cli_rule_filters(&mut config, &cli.select, &cli.ignore)?;
 
     let files = collect_python_files(&cli.paths)?;
 
@@ -271,4 +282,84 @@ fn collect_python_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     }
 
     Ok(files)
+}
+
+fn apply_cli_rule_filters(
+    config: &mut config::Config,
+    select: &[String],
+    ignore: &[String],
+) -> Result<()> {
+    let known_rule_names = rules::all_rule_names();
+    let known_rule_set: BTreeSet<&str> = known_rule_names.iter().copied().collect();
+
+    let invalid_rule_ids = select
+        .iter()
+        .chain(ignore.iter())
+        .filter(|rule_id| !known_rule_set.contains(rule_id.as_str()))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    if !invalid_rule_ids.is_empty() {
+        let invalid_rule_ids = invalid_rule_ids.into_iter().collect::<Vec<_>>().join(", ");
+        anyhow::bail!("unknown rule id(s): {invalid_rule_ids}");
+    }
+
+    if !select.is_empty() {
+        let selected_rule_ids: BTreeSet<&str> = select.iter().map(String::as_str).collect();
+        config.exclude.extend(
+            known_rule_names
+                .into_iter()
+                .filter(|rule_id| !selected_rule_ids.contains(rule_id))
+                .map(str::to_owned),
+        );
+    }
+
+    config.exclude.extend(ignore.iter().cloned());
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_cli_rule_filters;
+    use slopcop::{Config, lint_source_with_config};
+
+    #[test]
+    fn select_runs_only_selected_rules() {
+        let mut config = Config::default();
+        let source = "print(\"hi\")\nassert value";
+
+        apply_cli_rule_filters(&mut config, &["no-print".to_string()], &[]).unwrap();
+
+        let diagnostics = lint_source_with_config(source, "src/example.py", &config);
+
+        assert!(diagnostics.iter().any(|diagnostic| diagnostic.rule_id == "no-print"));
+        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.rule_id == "no-assert"));
+    }
+
+    #[test]
+    fn ignore_skips_rule() {
+        let mut config = Config::default();
+        let source = "print(\"hi\")";
+
+        apply_cli_rule_filters(&mut config, &[], &["no-print".to_string()]).unwrap();
+
+        let diagnostics = lint_source_with_config(source, "src/example.py", &config);
+
+        assert!(!diagnostics.iter().any(|diagnostic| diagnostic.rule_id == "no-print"));
+    }
+
+    #[test]
+    fn unknown_rule_ids_error() {
+        let mut config = Config::default();
+
+        let error = apply_cli_rule_filters(
+            &mut config,
+            &["no-print".to_string()],
+            &["not-a-rule".to_string()],
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "unknown rule id(s): not-a-rule");
+    }
 }
