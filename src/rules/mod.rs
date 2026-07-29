@@ -80,6 +80,11 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
     all_rules_with_config(&Config::default())
 }
 
+/// Return the full set of known rule IDs.
+pub fn all_rule_names() -> Vec<&'static str> {
+    all_rules().into_iter().map(|rule| rule.name()).collect()
+}
+
 /// Return a map from rule_id → help text for all rules, with user overrides applied.
 pub fn help_texts(config: &Config) -> std::collections::HashMap<&'static str, String> {
     let rules = all_rules_with_config(config);
